@@ -1,0 +1,13 @@
+# Caches.
+**/__pycache__/
+**/.DS_Store
+**/.vscode
+
+# Virtualenv.
+/wiki-search/
+
+# Downloads.
+/CompressedDownloads/
+/WikipediaData/
+
+# Models.
