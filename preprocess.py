@@ -17,12 +17,13 @@ import pyarrow as pa
 import shutil
 import string
 import sys
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Union
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
 import lancedb
 import msgpack
+import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.tokenize import word_tokenize
@@ -67,7 +68,7 @@ def get_datastruct_size(data_struct) -> int:
 	return data_size
 
 
-def process_page(page: Tag | NavigableString) -> str:
+def process_page(page: Union[Tag, NavigableString]) -> str:
 	'''
 	Format and merge the texts from the <title> and <text> tags in the
 		current <page> tag.
@@ -1140,7 +1141,9 @@ def main() -> None:
 	# NLTK SETUP
 	###################################################################
 	# Download packages from nltk.
-	# nltk.download("stopwords")
+	nltk.download("stopwords")
+	nltk.download("punkt")
+	nltk.download("wordnet")
 
 	###################################################################
 	# EMBEDDING MODEL SETUP

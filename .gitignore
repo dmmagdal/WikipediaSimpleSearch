@@ -11,3 +11,18 @@
 /WikipediaData/
 
 # Models.
+/bert*
+/hkunlp*
+/sentence-transformers*
+
+# Database(s).
+/data
+/vector_data
+/bag_of_words
+
+# Preprocess state files.
+preprocess_state_bow.txt
+preprocess_state_vector.txt
+generate_cache_state.txt
+generate_tfidf_state.txt
+generate_idf_state.txt

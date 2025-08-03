@@ -184,7 +184,7 @@ def main():
 
 	# Confirm file decompression.
 	print("WARNING!")
-	print("The compressed files downloaded can be as large as 100GB when decompressed. Please make sure you have enough disk space before proceeding.")
+	print("The compressed files downloaded can be as large as 1.5 GB when decompressed. Please make sure you have enough disk space before proceeding.")
 	confirmation = input("Proceed? [Y/n] ")
 	if confirmation not in ["Y", "y"]:
 		exit(0)
