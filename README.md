@@ -17,6 +17,8 @@ Description: Similar to the WikipediaEnSearch (which operates on the full Wikipe
  - 16 GB RAM if running preprocessing script with minimal workers.
      - Preprocessing script takes around 4 hours (per document) with 4 workers/processors on bag-of-words, so single worker should take around 64 hours (4 hours x 4 workers x 4 documents) to complete for that stage.
      - Memory overhead under 4 workers (bow or vector) is around 36 GB regardless. 36 / 4 = 9, so 16 GB RAM is recommended at minimum.
+ - 24 GB RAM if running the precompute sparse vectors script with one worker.
+     - Admittedly, this may be a more RAM intensive than realized.
 
 
 
@@ -29,4 +31,5 @@ Description: Similar to the WikipediaEnSearch (which operates on the full Wikipe
      - Possible optimizations:
          - Rewrite in rust.
          - Cut down/remove/ignore all "redirect" pages.
+     - In a similar vein, I may have to rework the `preprocess_sparse_vectors.py` script to also be more memory efficient (speed is actually manageable). See above for RAM usage under a single worker for this script.
  - Running the vector database on the entire Simple Wikipedia corpus is still not scalable. Was barely 1/2 way through the first decompressed `.xml` file shard and it had generated over 312 GB of embeddings. A previous napkin calculation for the original full Wikipedia corpus showed that it would need terabytes of storage, so it stands to reason that a similar need would be required for this dataset. 

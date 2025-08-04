@@ -19,7 +19,7 @@ import os
 import re
 import string
 import time
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Union
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
@@ -180,7 +180,7 @@ def load_data_file(path: str, use_json: bool = False) -> Dict:
 	return load_data_from_msgpack(path)
 
 
-def create_aligned_tfidf_vector(group: pd.DataFrame | Dict[str, float], words: List[str]):
+def create_aligned_tfidf_vector(group: Union[pd.DataFrame, Dict[str, float]], words: List[str]):
 	'''
 	Create a TF-IDF vector that aligns with the input words list.
 	@param: group (), the grouped dataframe entries containing the 
@@ -455,7 +455,7 @@ class BagOfWords:
 		self.inverted_index_files = None
 		self.sparse_vector_files = None
 		self.int_to_doc_file = None
-		self.documents_folder = "./WikipediaEnDownload/WikipediaData"
+		self.documents_folder = "./WikipediaData"
 
 		# Corpus metadata.
 		self.corpus_size = corpus_size	# total number of documents (articles)
@@ -922,7 +922,7 @@ class BagOfWords:
 		return doc_word_tf
 	
 
-	def compute_idf(self, words: List[str], return_dict: bool = False) -> List[float] | Dict[str, float]:
+	def compute_idf(self, words: List[str], return_dict: bool = False) -> Union[List[float], Dict[str, float]]:
 		'''
 		Retrieve the precomputed Inverse Document Frquency of the given
 		 	set of (usually query) words.

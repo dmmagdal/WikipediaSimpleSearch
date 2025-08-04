@@ -15,7 +15,7 @@ import multiprocessing as mp
 import os
 import shutil
 import string
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Union
 
 from bs4 import BeautifulSoup
 import msgpack
@@ -334,7 +334,7 @@ def build_trie(doc_to_word: Dict[str, List[int]]) -> Dict:
 	return trie
 
 
-def search_trie(trie: Dict, word: str) -> Set | None:
+def search_trie(trie: Dict, word: str) -> Union[Set, None]:
 	current = trie
 	for char in word:
 		if char not in current:
@@ -455,7 +455,7 @@ def main():
 		)
 
 	# XML files containing the actual documents.
-	data_folder = "./WikipediaEnDownload/WikipediaData"
+	data_folder = "./WikipediaData"
 	data_xml_files = [
 		os.path.join(data_folder, file)
 		for file in os.listdir(data_folder)
