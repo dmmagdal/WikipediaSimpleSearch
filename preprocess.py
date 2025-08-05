@@ -28,6 +28,7 @@ from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 from num2words import num2words
+import pandas as pd
 import requests
 import torch
 from tqdm import tqdm
@@ -1425,11 +1426,26 @@ def main() -> None:
 				d2w_metadata_path,
 				os.path.basename(file).rstrip('.xml') + ".msgpack"
 			)
+			path_parquet = os.path.join(
+				d2w_metadata_path,
+				os.path.basename(file).rstrip('.xml') + ".parquet"
+			)
 			with open(path, "w+") as d2w_f:
 				json.dump(doc_to_word, d2w_f, indent=4)
 			with open(path_msgpack, "wb+") as d2w_f:
 				packed = msgpack.packb(doc_to_word)
 				d2w_f.write(packed)
+			
+			# Flatten data for dataframe.
+			data = [
+				{"doc": file, "word": word, "count": count}
+				for file, word_counts in doc_to_word.items()
+				for word, count in word_counts.items()
+			]
+
+			# Create DataFrame
+			df = pd.DataFrame(data)
+			df.to_parquet(path_parquet)
 
 		if len(list(word_to_doc.keys())) > 0:
 			path = os.path.join(
@@ -1440,11 +1456,25 @@ def main() -> None:
 				w2d_metadata_path, 
 				os.path.basename(file).rstrip('.xml') + ".msgpack"
 			)
+			path_parquet = os.path.join(
+				w2d_metadata_path,
+				os.path.basename(file).rstrip('.xml') + ".parquet"
+			)
 			with open(path, "w+") as w2d_f:
 				json.dump(word_to_doc, w2d_f, indent=4)
 			with open(path_msgpack, "wb+") as w2d_f:
 				packed = msgpack.packb(word_to_doc)
 				w2d_f.write(packed)
+			
+			# Flatten data for dataframe.
+			data = [
+				{"word": word, "num_docs": count}
+				for word, count in word_to_doc.items()
+			]
+
+			# Create DataFrame
+			df = pd.DataFrame(data)
+			df.to_parquet(path_parquet)
 
 		# Update progress files as necessary.
 		if args.bow:
