@@ -9,12 +9,19 @@
 import argparse
 import os
 import json
+import random
 import time
 
+import pandas as pd
 import torch
 
 from search import ReRankSearch, TF_IDF, BM25, VectorSearch
 from search import print_results
+from search import load_data_from_msgpack, load_data_from_json
+
+
+seed = 1234
+random.seed(seed)
 
 
 def test() -> None:
@@ -99,6 +106,21 @@ def test() -> None:
 	###################################################################
 	# Given passages that are directly pulled from random articles, 
 	# determine if the passage each search engine retrieves is correct.
+
+	# 
+	documents = []
+	print(tf_idf.inverted_index_files)
+	print(tf_idf.int_to_doc_file)
+	for file in tf_idf.inverted_index_files:
+		print(file)
+		df = pd.read_parquet(file)
+		documents += df["doc"].unique().tolist()
+
+	documents = list(set(documents))
+	selected_docs = random.sample(documents, 5)
+	print(selected_docs)
+	exit()
+
 	query_passages = [
 		# Title: Spencer Bailey
 		# SHA1: rpgkzbz22eatq2nlei6w8hd9uk3ikdy
