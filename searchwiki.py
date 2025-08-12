@@ -11,6 +11,7 @@ import os
 import json
 import random
 import time
+from typing import Any, Dict
 
 import pandas as pd
 import torch
@@ -22,6 +23,9 @@ from search import load_data_from_msgpack, load_data_from_json
 
 seed = 1234
 random.seed(seed)
+
+
+def get_all_articles(config: Dict[str: Any], )
 
 
 def test() -> None:
@@ -108,6 +112,77 @@ def test() -> None:
 	# determine if the passage each search engine retrieves is correct.
 
 	# 
+	doc_to_words_path = config["preprocessing"]["doc_to_words_path"]
+	bow_files = os.listdir(doc_to_words_path)
+	print(bow_files)
+	if any([file.endswith(".parquet") for file in bow_files]):
+		files = [
+			os.path.join(doc_to_words_path, file) for file in bow_files
+			if file.endswith(".parquet")
+		]
+	elif any([file.endswith(".msgpack") for file in bow_files]):
+		files = [
+			os.path.join(doc_to_words_path, file) for file in bow_files
+			if file.endswith(".msgpack")
+		]
+	elif any([file.endswith(".json") for file in bow_files]):
+		files = [
+			os.path.join(doc_to_words_path, file) for file in bow_files
+			if file.endswith(".json")
+		]
+	else:
+		print(f"No supported files detected in {doc_to_words_path}")
+		exit(1)
+
+	articles = []
+	for file in files:
+		if file.endswith(".parquet"):
+			data = pd.read_parquet(file)
+			articles.extend(data["doc"].unique().tolist())
+		if file.endswith(".msgpack"):
+			data = load_data_from_msgpack(file)
+			articles.extend(list(data.keys()))
+		if file.endswith(".json"):
+			data = load_data_from_json(file)
+			articles.extend(list(data.keys()))
+
+	redirects_path = config["preprocessing"]["staging_redirect_path"]
+	redirect_files = [
+		os.path.join(redirects_path, file) 
+		for file in os.listdir(redirects_path)
+		if file.endswith(".parquet")
+	]
+	if os.path.exists(redirects_path) and len(redirect_files) > 0:
+		data = pd.DataFrame()
+		for file in redirect_files:
+			if len(data) == 0:
+				data = pd.read_parquet(file)
+			else:
+				data = pd.concat(
+					[data, pd.read_parquet(file)], ignore_index=True
+				)
+		
+		print(data.head())
+
+		# Explode the articles list so each article gets its own row
+		data_exploded = data.explode("articles", ignore_index=True)
+
+		# Combine file + article into a single string
+		redirect_articles = (
+			data_exploded["file"] + data_exploded["articles"]
+		).tolist()
+		print(len(redirect_articles))
+		print(redirect_articles[0])
+
+		print(len(articles))
+		print(len(set(articles)))
+		print(len(list(set(articles) - set(redirect_articles))))
+		print(len(set(articles).difference(set(redirect_articles))))
+		print(len(list(set(redirect_articles) - set(articles))))
+
+	print(len(articles))
+	print(articles[0])
+	exit()
 	documents = []
 	print(tf_idf.inverted_index_files)
 	print(tf_idf.int_to_doc_file)
