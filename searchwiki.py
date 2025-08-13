@@ -61,20 +61,29 @@ def get_article_entries(articles: List[str]) -> List[Tuple[str, str, str, str]]:
 	'''
 	# Initialize the results list.
 	results = []
-
+	
 	# Iterate through each article.
+	file_sha_map = dict()
 	for article in articles:
 		# Split the file and SHA1.
 		split_string = article.split(".xml")
 		if len(split_string) != 2:
 			results.append((article, "", "", ""))
+			continue
 
 		# Isolate the file, SHA1, and article text.
 		file, sha = split_string[0] + ".xml", split_string[1]
-		text = load_article_text(file, [sha])[0]
+		if file in file_sha_map:
+			file_sha_map[file].append(sha)
+		else:
+			file_sha_map[file] = [sha]
 
-		# Append the article, text, file, SHA1, to the results.
-		results.append((article, text, file, sha))
+	for file, sha_list in file_sha_map.items():
+		texts = load_article_text(file, sha_list)
+
+		for idx, text in enumerate(texts):
+			sha = sha_list[idx]
+			results.append((file + sha, text, file, sha))
 
 	# Return the results.
 	return results
@@ -251,8 +260,15 @@ def test() -> None:
 	selected_docs = random.sample(articles, 5)
 	print("Sampled 5 articles.")
 
+	# TODO: Fix this bottleneck. Takes a few minutes. Consider rust
+	# extension? Not super critical since I got it down from 6 minutes 
+	# to ~3 minutes. Biggest bottleneck is probably the file IO of 
+	# parsing through files and getting the exact article texts.
+	start = time.perf_counter()
 	article_entries = get_article_entries(selected_docs)
-	print("Isolated article texts.")
+	end = time.perf_counter()
+	elapsed = end - start
+	print(f"Isolated article texts in {elapsed:.6f} seconds.")
 
 	query_passages = [
 		get_random_paragraph_from_article(text)
@@ -277,7 +293,6 @@ def test() -> None:
 			results = engine.search(query)
 			query_search_end = time.perf_counter()
 			query_search_elapsed = query_search_end - query_search_start
-			print(len(results))
 
 			# Print out the search time and the search results.
 			print(f"Search returned in {query_search_elapsed:.6f} seconds")

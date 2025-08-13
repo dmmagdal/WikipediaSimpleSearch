@@ -1016,7 +1016,6 @@ class TF_IDF(BagOfWords):
 
 		# Query inverted index.
 		document_ids = self.inverted_index_.query(words)
-		print(len(document_ids))
 	
 		# print(json.dumps(document_ids[:10], indent=4))
 		# df = pd.read_parquet(self.sparse_vector_files[0])
@@ -1028,7 +1027,7 @@ class TF_IDF(BagOfWords):
 		files_to_docs = dict()
 		for id in tqdm(document_ids):
 			match = re.search(
-				r"(pages-articles-multistream\d+_[a-f0-9]+\.xml)", id
+				r"(pages-articles-multistream_[a-f0-9]+\.xml)", id
 			)
 
 			if match:
@@ -1126,25 +1125,24 @@ class TF_IDF(BagOfWords):
 		# Multi process:
 		# - 4 processors OOM'ed on server
 
-		result_item = self.targeted_file_search(
+		results = self.targeted_file_search(
 			files_to_docs, target_sparse_vector_files, words, 
 			query_tfidf_vector, max_results
 		)
-		print(len(result_item))
-		print(result_item)
-		if max_results != -1 and len(corpus_tfidf) >= max_results:
-			# Pushpop the highest (cosine similarity) value
-			# tuple from the heap to make way for the next
-			# tuple.
-			heapq.heappushpop(
-				corpus_tfidf,
-				result_item
-			)
-		else:
-			heapq.heappush(
-				corpus_tfidf,
-				result_item
-			)
+		for result_item in results:
+			if max_results != -1 and len(corpus_tfidf) >= max_results:
+				# Pushpop the highest (cosine similarity) value
+				# tuple from the heap to make way for the next
+				# tuple.
+				heapq.heappushpop(
+					corpus_tfidf,
+					result_item
+				)
+			else:
+				heapq.heappush(
+					corpus_tfidf,
+					result_item
+				)
 		
 		# # Use with Pandas/all other software.
 		# with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -1201,7 +1199,21 @@ class TF_IDF(BagOfWords):
 		# corpus_tfidf = self.compute_tfidf(
 		# 	words, word_freq, target_documents, max_results=max_results
 		# )
-		print(len(corpus_tfidf))
+
+		file_sha_map = dict()
+		for result in corpus_tfidf:
+			document_sha1 = result[1]
+			document, sha1 = os.path.basename(document_sha1).split(".xml")
+			document = os.path.join(self.documents_folder, document + ".xml")
+
+			if document in file_sha_map:
+				file_sha_map[document].append(sha1)
+			else:
+				file_sha_map[document] = [sha1]
+
+		file_text_map = dict()
+		for document, sha1_list in tqdm(file_sha_map.items()):
+			file_text_map[document] = load_article_text(document, sha1_list)
 
 		# The corpus TF-IDF results are stored in a max heap. Convert
 		# the structure back to a list sorted from smallest to largest
@@ -1220,7 +1232,10 @@ class TF_IDF(BagOfWords):
 			document_sha1 = result[1]
 			document, sha1 = os.path.basename(document_sha1).split(".xml")
 			document = os.path.join(self.documents_folder, document + ".xml")
-			text = load_article_text(document, [sha1])[0]
+			# text = load_article_text(document, [sha1])[0]
+			texts = file_text_map[document]
+			text_idx = file_sha_map[document].index(sha1)
+			text = texts[text_idx]
 			
 			# Append the results.
 			full_result = result + [text, [0, len(text)]]
@@ -1236,9 +1251,6 @@ class TF_IDF(BagOfWords):
 		# Stack heap for the search.
 		stack_heap = list()
 		heapq.heapify(stack_heap)
-
-		print(sparse_vector_files)
-		print(len(sparse_vector_files))
 
 		for file in tqdm(sparse_vector_files):
 			# profiler.enable()
@@ -1310,7 +1322,7 @@ class TF_IDF(BagOfWords):
 			# profiler.disable()
 			# profiler.print_stats(sort="time")
 
-		print(f"thread stack heap length: {len(stack_heap)}")
+		# print(f"thread stack heap length: {len(stack_heap)}")
 		return stack_heap
 	
 
