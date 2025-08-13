@@ -280,6 +280,7 @@ class InvertedIndex:
 
 	def query(self, words: List[str], num_workers: int = 8) -> List[str]:
 		chunk_size = math.ceil(len(self.index_files) / num_workers)
+		chunk_size = 1 if chunk_size == 0 else chunk_size
 		chunks = [
 			self.index_files[i:i + chunk_size]
 			for i in range(0, len(self.index_files), chunk_size)
@@ -1087,6 +1088,7 @@ class TF_IDF(BagOfWords):
 		# ]
 		target_sparse_vector_files = list(files_to_docs.keys())
 		chunk_size = math.ceil(len(target_sparse_vector_files) / num_workers)
+		chunk_size = 1 if chunk_size == 0 else chunk_size
 		file_chunks = [
 			target_sparse_vector_files[i:i + chunk_size]
 			for i in range(0, len(target_sparse_vector_files), chunk_size)
