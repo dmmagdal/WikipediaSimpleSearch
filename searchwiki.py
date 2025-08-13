@@ -27,6 +27,11 @@ random.seed(seed)
 
 
 def get_random_paragraph_from_article(article_text: str) -> str:
+	'''
+	Get a random paragraph from the wikipedia article.
+	@param: article_text (str), the text of the wikipedia article.
+	@return: returns a random, non-empty paragraph from that article.
+	'''
 	# Return the article text (empty string) if the article text is 
 	# just an empty string.
 	if article_text == "":
@@ -48,17 +53,30 @@ def get_random_paragraph_from_article(article_text: str) -> str:
 
 
 def get_article_entries(articles: List[str]) -> List[Tuple[str, str, str, str]]:
+	'''
+	Extract the article text, file location, and SHA1 for each article.
+	@param: articles (List[str]), the list of articles (file + SHA1).
+	@return: returns a list containing the article (file + SHA1), 
+		article text, file, and SHA1 in a tuple.
+	'''
+	# Initialize the results list.
 	results = []
+
+	# Iterate through each article.
 	for article in articles:
+		# Split the file and SHA1.
 		split_string = article.split(".xml")
 		if len(split_string) != 2:
 			results.append((article, "", "", ""))
 
+		# Isolate the file, SHA1, and article text.
 		file, sha = split_string[0] + ".xml", split_string[1]
 		text = load_article_text(file, [sha])[0]
 
+		# Append the article, text, file, SHA1, to the results.
 		results.append((article, text, file, sha))
 
+	# Return the results.
 	return results
 
 
@@ -141,6 +159,7 @@ def get_all_articles(config: Dict[str, Any]) -> List[str]:
 		# Remove redirect articles from the list.
 		articles = list(set(articles) - set(redirect_articles))
 
+	# Return the list of articles.
 	return articles
 
 
@@ -216,7 +235,7 @@ def test() -> None:
 
 	search_engines = [
 		("tf-idf", tf_idf), 
-		# ("bm25", bm25), 
+		("bm25", bm25), 
 		# ("vector", vector_search),
 		# ("rerank", rerank)
 	]
@@ -241,9 +260,10 @@ def test() -> None:
 	]
 	print("Isolated query passages.")
 	print("=" * 72)
+	print("Testing Sparse Vector search engines:")
 
 	# Iterate through each search engine.
-	for name, engine in search_engines:
+	for name, engine in search_engines[:2]:
 		# Search engine banner text.
 		print(f"Searching with {name}")
 		search_times = []
@@ -257,6 +277,7 @@ def test() -> None:
 			results = engine.search(query)
 			query_search_end = time.perf_counter()
 			query_search_elapsed = query_search_end - query_search_start
+			print(len(results))
 
 			# Print out the search time and the search results.
 			print(f"Search returned in {query_search_elapsed:.6f} seconds")

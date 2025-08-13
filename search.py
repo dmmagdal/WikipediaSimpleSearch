@@ -1016,6 +1016,7 @@ class TF_IDF(BagOfWords):
 
 		# Query inverted index.
 		document_ids = self.inverted_index_.query(words)
+		print(len(document_ids))
 	
 		# print(json.dumps(document_ids[:10], indent=4))
 		# df = pd.read_parquet(self.sparse_vector_files[0])
@@ -1124,30 +1125,50 @@ class TF_IDF(BagOfWords):
 		# - 32 threads crashed program on server
 		# Multi process:
 		# - 4 processors OOM'ed on server
+
+		result_item = self.targeted_file_search(
+			files_to_docs, target_sparse_vector_files, words, 
+			query_tfidf_vector, max_results
+		)
+		print(len(result_item))
+		print(result_item)
+		if max_results != -1 and len(corpus_tfidf) >= max_results:
+			# Pushpop the highest (cosine similarity) value
+			# tuple from the heap to make way for the next
+			# tuple.
+			heapq.heappushpop(
+				corpus_tfidf,
+				result_item
+			)
+		else:
+			heapq.heappush(
+				corpus_tfidf,
+				result_item
+			)
 		
-		# Use with Pandas/all other software.
-		with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-			print("Starting multithreaded processing")
-			results = executor.map(lambda args: self.targeted_file_search(*args), args_list)
+		# # Use with Pandas/all other software.
+		# with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+		# 	print("Starting multithreaded processing")
+		# 	results = executor.map(lambda args: self.targeted_file_search(*args), args_list)
 			
-			for result in results:
-				while len(result) > 0:
-					result_item = result.pop()
-					if result_item in corpus_tfidf:
-						continue
-					if max_results != -1 and len(corpus_tfidf) >= max_results:
-						# Pushpop the highest (cosine similarity) value
-						# tuple from the heap to make way for the next
-						# tuple.
-						heapq.heappushpop(
-							corpus_tfidf,
-							result_item
-						)
-					else:
-						heapq.heappush(
-							corpus_tfidf,
-							result_item
-						)
+		# 	for result in results:
+		# 		while len(result) > 0:
+		# 			result_item = result.pop()
+		# 			if result_item in corpus_tfidf:
+		# 				continue
+		# 			if max_results != -1 and len(corpus_tfidf) >= max_results:
+		# 				# Pushpop the highest (cosine similarity) value
+		# 				# tuple from the heap to make way for the next
+		# 				# tuple.
+		# 				heapq.heappushpop(
+		# 					corpus_tfidf,
+		# 					result_item
+		# 				)
+		# 			else:
+		# 				heapq.heappush(
+		# 					corpus_tfidf,
+		# 					result_item
+		# 				)
 
 		# with mp.Pool(num_workers) as pool:
 		# 	print("Starting multiprocessing processing")
@@ -1180,6 +1201,7 @@ class TF_IDF(BagOfWords):
 		# corpus_tfidf = self.compute_tfidf(
 		# 	words, word_freq, target_documents, max_results=max_results
 		# )
+		print(len(corpus_tfidf))
 
 		# The corpus TF-IDF results are stored in a max heap. Convert
 		# the structure back to a list sorted from smallest to largest
@@ -1214,6 +1236,9 @@ class TF_IDF(BagOfWords):
 		# Stack heap for the search.
 		stack_heap = list()
 		heapq.heapify(stack_heap)
+
+		print(sparse_vector_files)
+		print(len(sparse_vector_files))
 
 		for file in tqdm(sparse_vector_files):
 			# profiler.enable()
