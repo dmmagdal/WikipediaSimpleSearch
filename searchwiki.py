@@ -308,13 +308,13 @@ def test(print_search: bool = False) -> None:
 
 	# NOTE:
 	# Mean search times for each search engine.
-	# TF-IDF: ~240s (or 4 min)
-	# BM25: ~200s (or 3.5 min)
+	# TF-IDF: ~360s (or 6 min)
+	# BM25: ~390s (or 6.5 min)
 	# Current bottleneck is the text loading. 
 
 	# Iterate through each search engine.
-	# for name, engine in [search_engines[1]]:
-	for name, engine in search_engines[:2]:
+	for name, engine in [search_engines[1]]:
+	# for name, engine in search_engines[:2]:
 		# Search engine banner text.
 		print(f"Searching with {name}")
 		search_times = []
@@ -342,11 +342,13 @@ def test(print_search: bool = False) -> None:
 
 			# Evaluate the search results.
 			evaluate_search_results(results, selected_docs[idx])
+			print()
 
 		# Compute and print the average search time.
 		avg_search_time = sum(search_times) / len(search_times)
 		print(f"Average search time: {avg_search_time:.6f} seconds")
 		print("=" * 72)
+		exit()
 	exit()
 
 	###################################################################

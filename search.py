@@ -1133,10 +1133,6 @@ class TF_IDF(BagOfWords):
 			# Pop the top item from the max heap.
 			result = heapq.heappop(corpus_tfidf)
 
-			# Reverse the cosine similarity score back to its original
-			# value.
-			result[0] *= -1
-
 			# Extract the document path and SHA1 and use them to load 
 			# the article text.
 			document_sha1 = result[1]
@@ -1214,7 +1210,7 @@ class TF_IDF(BagOfWords):
 			top_n = results.nlargest(max_results, "cosine_similarity")
 			top_n_list = []
 			for _, row in top_n.iterrows():
-				top_n_list.append((-row["cosine_similarity"], row["doc"]))
+				top_n_list.append((row["cosine_similarity"], row["doc"]))
 
 			for doc_cos_score, doc in top_n_list:
 				# Insert the document name (includes file path & 
@@ -1368,9 +1364,6 @@ class BM25(BagOfWords):
 			# Pop the bottom item from the max heap.
 			result = heapq.heappop(corpus_bm25)
 
-			# Reverse the BM25 score back to its original value.
-			result[0] *= -1
-
 			# Extract the document path and SHA1 and use them to load 
 			# the article text.
 			document_sha1 = result[1]
@@ -1484,7 +1477,7 @@ class BM25(BagOfWords):
 
 			# Get top-N docs for this batch.
 			top_n = results.nlargest(max_results, "bm25_score")
-			top_n_list = [(-row["bm25_score"], row["doc"]) for _, row in top_n.iterrows()]
+			top_n_list = [(row["bm25_score"], row["doc"]) for _, row in top_n.iterrows()]
 
 			# Push to heap.
 			for doc_bm25_score, doc in top_n_list:
