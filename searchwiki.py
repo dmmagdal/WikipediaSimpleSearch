@@ -26,6 +26,33 @@ seed = 1234
 random.seed(seed)
 
 
+def evaluate_search_results(results: List[Tuple[float, str, str, List[int]]], selected_doc: str) -> None:
+	'''
+	Evaluate whether the target document appears within the search 
+		top-n results for various values of n. These results are
+		print out to console.
+	@param: results (List[Tuple[float, str, str, List[int]]]), the raw
+		results list returned from the search engine.
+	@param: selected_doc (str), the target document that is expected to
+		be within the results.
+	@return: returns nothing.
+	'''
+	# Isolate the documents (file + sha) returned in the results. 
+	result_docs = [result[1] for result in results]
+
+	# Acquire the position of the target/expected document from the
+	# results documents list. Position is -1 if it does not appear in
+	# the results list.
+	doc_idx = result_docs.index(selected_doc) if selected_doc in result_docs else -1
+	
+	# List the top-n values you are using. Iterate through that list
+	# and print whether the document is found in the top-n results for
+	# that n.
+	top_n = [5, 10, 25, len(results)]
+	for n in top_n:
+		print(f"Top-{n}: {doc_idx >= 0 and doc_idx < n}")
+
+
 def get_random_paragraph_from_article(article_text: str) -> str:
 	'''
 	Get a random paragraph from the wikipedia article.
@@ -172,10 +199,11 @@ def get_all_articles(config: Dict[str, Any]) -> List[str]:
 	return articles
 
 
-def test() -> None:
+def test(print_search: bool = False) -> None:
 	'''
 	Test each of the search processes on the wikipedia dataset.
-	@param: takes no arguments.
+	@param: print_search (bool), whether to print the search results 
+		during the tests. Is False by default.
 	@return: returns nothing.
 	'''
 	# Input values to search engines.
@@ -278,7 +306,14 @@ def test() -> None:
 	print("=" * 72)
 	print("Testing Sparse Vector search engines:")
 
+	# NOTE:
+	# Mean search times for each search engine.
+	# TF-IDF: ~240s (or 4 min)
+	# BM25: ~200s (or 3.5 min)
+	# Current bottleneck is the text loading. 
+
 	# Iterate through each search engine.
+	# for name, engine in [search_engines[1]]:
 	for name, engine in search_engines[:2]:
 		# Search engine banner text.
 		print(f"Searching with {name}")
@@ -286,7 +321,7 @@ def test() -> None:
 
 		# Iterate through each passage and run the search with the 
 		# search engine.
-		for query in query_passages:
+		for idx, query in enumerate(query_passages):
 			# Run the search and track the time it takes to run the 
 			# search.
 			query_search_start = time.perf_counter()
@@ -294,19 +329,25 @@ def test() -> None:
 			query_search_end = time.perf_counter()
 			query_search_elapsed = query_search_end - query_search_start
 
-			# Print out the search time and the search results.
+			# Print out the search time.
 			print(f"Search returned in {query_search_elapsed:.6f} seconds")
 			print()
-			print_results(results, search_type=name)
+
+			# Print out the search results if specified.
+			if print_search:
+				print_results(results, search_type=name)
 
 			# Append the search time to a list.
 			search_times.append(query_search_elapsed)
+
+			# Evaluate the search results.
+			evaluate_search_results(results, selected_docs[idx])
 
 		# Compute and print the average search time.
 		avg_search_time = sum(search_times) / len(search_times)
 		print(f"Average search time: {avg_search_time:.6f} seconds")
 		print("=" * 72)
-		exit()
+	exit()
 
 	###################################################################
 	# GENERAL QUERY
@@ -355,6 +396,11 @@ def main() -> None:
 		"--test",
 		action="store_true",
 		help="Specify whether to run the search engine tests. Default is false/not specified."
+	)
+	parser.add_argument(
+		"--print_results",
+		action="store_true",
+		help="Specify whether to print the search results during the search engine tests. Default is false/not specified."
 	)
 	args = parser.parse_args()
 

@@ -16,6 +16,7 @@ import math
 import mmap
 import multiprocessing as mp
 import os
+import random
 import re
 import string
 import time
@@ -42,6 +43,8 @@ profiler = cProfile.Profile()
 # Required to initialize models on GPU for multiprocessing. Placed
 # here due to recommendation from official python documentation.
 mp.set_start_method("spawn", force=True)
+
+random.seed(1234)
 
 
 def hashSum(data: str) -> str:
@@ -976,9 +979,15 @@ class BagOfWords:
 			idf_dict.update(idf_values)
 
 		idf_vector = [
-			idf_dict[word]
+			idf_dict.get(word, math.log((2 * self.corpus_size) + 1))
 			for word in words
 		]
+
+		# NOTE:
+		# Used a smoothed version of IDF for OOV inputs. Smoothed 
+		# version adds 0.5 to the numerator and denominator before 
+		# computing the log to get the IDF. Simplifies to 2N + 1
+		# (before log).
 
 		# Return the inverse document frequency vector.
 		return idf_vector if not return_dict else idf_dict
@@ -990,7 +999,6 @@ class TF_IDF(BagOfWords):
 			bow_dir=bow_dir, corpus_size=corpus_size, srt=srt, 
 			use_json=use_json
 		)
-		pass
 
 
 	def search(self, query: str, max_results: int = 50):
@@ -1016,11 +1024,6 @@ class TF_IDF(BagOfWords):
 
 		# Query inverted index.
 		document_ids = self.inverted_index_.query(words)
-	
-		# print(json.dumps(document_ids[:10], indent=4))
-		# df = pd.read_parquet(self.sparse_vector_files[0])
-		# print(self.sparse_vector_files[0])
-		# print(df["doc"].head())
 
 		# Organize which sparse vector parquet files are going to be 
 		# queried.
@@ -1038,11 +1041,6 @@ class TF_IDF(BagOfWords):
 					self.sparse_vectors_folder, 
 					xml_basename.replace(".xml", ".parquet")
 				)
-
-				# print(xml_basename)
-				# print(sparse_vector_file)
-				# print(sparse_vector_file in self.sparse_vector_files)
-				# exit()
 
 				# Validate sparse vector file and add current document 
 				# ID to that mapping.
@@ -1064,10 +1062,6 @@ class TF_IDF(BagOfWords):
 			query_tfidf, words
 		)
 
-		# num_workers used:
-		# 8 -> 
-		# 16 -> 
-		# 32 -> OOM on macbook (capped at around 15 GB -> includes swap/cache)
 		# NOTE:
 		# Number of threads seems to be gated by hardware (memory). The
 		# largest trie bundle is 417MB and 389MB for the doc to words
@@ -1076,55 +1070,16 @@ class TF_IDF(BagOfWords):
 		# parallelization/concurrency BUT since this is a hardware 
 		# constraint, I've already pushed optimization as far as I can
 		# (with the exception of converting to rust).
+
 		# TODO:
 		# Add num_workers as an __init__() argument for the BagOfWords
 		# class and set it in the config.json.
 
-		num_workers = 8
-		# chunk_size = math.ceil(len(self.sparse_vector_files) / num_workers)
-		# file_chunks = [
-		# 	self.sparse_vector_files[i:i + chunk_size]
-		# 	for i in range(0, len(self.sparse_vector_files), chunk_size)
-		# ]
 		target_sparse_vector_files = list(files_to_docs.keys())
-		chunk_size = math.ceil(len(target_sparse_vector_files) / num_workers)
-		chunk_size = 1 if chunk_size == 0 else chunk_size
-		file_chunks = [
-			target_sparse_vector_files[i:i + chunk_size]
-			for i in range(0, len(target_sparse_vector_files), chunk_size)
-		]
-		args_list = [
-			(files_to_docs, file_chunk, words, query_tfidf_vector, max_results)
-			for file_chunk in file_chunks
-		]
 		corpus_tfidf = []
 
-		# Snippet. Polars does not play well with multithreading from
-		# python because it is already multithreading under the hood in
-		# rust.
-
-		# TODO:
-		# - Copy adjustments over to BM25 class.
-		# - Find a way to speed up the entire search process. Search 
-		# should be running under 10 minutes (idealy).
-
-		# NOTE:
-		# General performances:
-		# INVERTED INDEX (SORTED)
-		# - Between 4 to 5 minutes
-		# ORGANIZE RETRIEVED DOCUMENTS
-		# - Between 1 to 2.5 minutes
-		# SPARSE VECTOR AGGREGATION & SORTING
-		# Single thread/process:
-		# - Runs in about 1.5 hours (~30s/item)
-		# Multi thread:
-		# - 4 threds runs in about 1 hour (~75s/item)
-		# - 8 threads runs in about 1 hour (~150s/item)
-		# - 16 threads runs in about 1 hour (~300s/item)
-		# - 32 threads crashed program on server
-		# Multi process:
-		# - 4 processors OOM'ed on server
-
+		# Pass target info to helper function and compute the top 
+		# TF-IDF results.
 		results = self.targeted_file_search(
 			files_to_docs, target_sparse_vector_files, words, 
 			query_tfidf_vector, max_results
@@ -1143,63 +1098,9 @@ class TF_IDF(BagOfWords):
 					corpus_tfidf,
 					result_item
 				)
-		
-		# # Use with Pandas/all other software.
-		# with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-		# 	print("Starting multithreaded processing")
-		# 	results = executor.map(lambda args: self.targeted_file_search(*args), args_list)
-			
-		# 	for result in results:
-		# 		while len(result) > 0:
-		# 			result_item = result.pop()
-		# 			if result_item in corpus_tfidf:
-		# 				continue
-		# 			if max_results != -1 and len(corpus_tfidf) >= max_results:
-		# 				# Pushpop the highest (cosine similarity) value
-		# 				# tuple from the heap to make way for the next
-		# 				# tuple.
-		# 				heapq.heappushpop(
-		# 					corpus_tfidf,
-		# 					result_item
-		# 				)
-		# 			else:
-		# 				heapq.heappush(
-		# 					corpus_tfidf,
-		# 					result_item
-		# 				)
 
-		# with mp.Pool(num_workers) as pool:
-		# 	print("Starting multiprocessing processing")
-		# 	results = pool.starmap(self.targeted_file_search, args_list)
-			
-		# 	for result in results:
-		# 		while len(result) > 0:
-		# 			result_item = result.pop()
-		# 			if result_item in corpus_tfidf:
-		# 				continue
-
-		# 			if max_results != -1 and len(corpus_tfidf) >= max_results:
-		# 				# Pushpop the highest (cosine similarity) value
-		# 				# tuple from the heap to make way for the next
-		# 				# tuple.
-		# 				heapq.heappushpop(
-		# 					corpus_tfidf,
-		# 					result_item
-		# 				)
-		# 			else:
-		# 				heapq.heappush(
-		# 					corpus_tfidf,
-		# 					result_item
-		# 				)
-
-		# # Compute the TF-IDF for the corpus.
-		# # _, corpus_tfidf = self.compute_tfidf(
-		# # 	words, word_freq, max_results=max_results
-		# # )
-		# corpus_tfidf = self.compute_tfidf(
-		# 	words, word_freq, target_documents, max_results=max_results
-		# )
-
+		# Create a mapping of documents (files) to articles (SHA1 
+		# hashes) to allow for faster article retrieval.
 		file_sha_map = dict()
 		for result in corpus_tfidf:
 			document_sha1 = result[1]
@@ -1211,9 +1112,18 @@ class TF_IDF(BagOfWords):
 			else:
 				file_sha_map[document] = [sha1]
 
+		# Create a mapping of documents (files) to the article texts
+		# while maintaining order parallel to the previous/above 
+		# mapping of documents to articles.
 		file_text_map = dict()
 		for document, sha1_list in tqdm(file_sha_map.items()):
 			file_text_map[document] = load_article_text(document, sha1_list)
+
+		# NOTE: 
+		# Current bottleneck is the text loading. Current 
+		# implementation is very iterative. Could do multi-threading/
+		# processing (at the cost of higher RAM). Also consider rust
+		# extension?
 
 		# The corpus TF-IDF results are stored in a max heap. Convert
 		# the structure back to a list sorted from smallest to largest
@@ -1284,6 +1194,10 @@ class TF_IDF(BagOfWords):
 			df_doc2words = df_doc2words[
 				df_doc2words["word"].isin(words) & df_doc2words["doc"].isin(target_docs)
 			]
+
+			# If no matches in this file, skip
+			if df_doc2words.empty:
+				continue
 
 			# Group tf-idf values by document to get a document level
 			# tf-idf vector.
@@ -1598,7 +1512,7 @@ class TF_IDF(BagOfWords):
 		return corpus_tfidf_heap
 
 
-class BM25(BagOfWords):#
+class BM25(BagOfWords):
 	def __init__(self, bow_dir: str, k1: float = 1.0, b: float = 0.0, 
 			  	corpus_size: int=-1, avg_doc_len: float=-1.0, srt: 
 				float=-1.0, use_json=False) -> None:
@@ -1662,12 +1576,61 @@ class BM25(BagOfWords):#
 
 		# Isolate a list of files/documents to look through.
 		# target_documents = self.get_documents_from_trie(words)
-		target_documents = self.inverted_index(words, index="word_idf_filter")
+		# target_documents = self.inverted_index(words, index="word_idf_filter")
+		document_ids = self.inverted_index_.query(words)
+
+		# Organize which sparse vector parquet files are going to be 
+		# queried.
+		files_to_docs = dict()
+		for id in tqdm(document_ids):
+			match = re.search(
+				r"(pages-articles-multistream_[a-f0-9]+\.xml)", id
+			)
+
+			if match:
+				# Isolate xml file basename. Build out the full 
+				# (corresponding) sparse vector file path.
+				xml_basename = match.group(1)
+				sparse_vector_file = os.path.join(
+					self.sparse_vectors_folder, 
+					xml_basename.replace(".xml", ".parquet")
+				)
+
+				# Validate sparse vector file and add current document 
+				# ID to that mapping.
+				if sparse_vector_file in self.sparse_vector_files:
+					if sparse_vector_file not in list(files_to_docs.keys()):
+						files_to_docs[sparse_vector_file] = list()
+					
+					files_to_docs[sparse_vector_file].append(id)
+		
+		target_sparse_vector_files = list(files_to_docs.keys())
+		corpus_bm25 = []
 
 		# Compute the BM25 for the corpus.
 		corpus_bm25 = self.compute_bm25(
-			words, target_documents, max_results=max_results
+			words, target_sparse_vector_files, files_to_docs, max_results=max_results
 		)
+
+		# Create a mapping of documents (files) to articles (SHA1 
+		# hashes) to allow for faster article retrieval.
+		file_sha_map = dict()
+		for result in corpus_bm25:
+			document_sha1 = result[1]
+			document, sha1 = os.path.basename(document_sha1).split(".xml")
+			document = os.path.join(self.documents_folder, document + ".xml")
+
+			if document in file_sha_map:
+				file_sha_map[document].append(sha1)
+			else:
+				file_sha_map[document] = [sha1]
+
+		# Create a mapping of documents (files) to the article texts
+		# while maintaining order parallel to the previous/above 
+		# mapping of documents to articles.
+		file_text_map = dict()
+		for document, sha1_list in tqdm(file_sha_map.items()):
+			file_text_map[document] = load_article_text(document, sha1_list)
 
 		# The corpus TF-IDF results are stored in a max heap. Convert
 		# the structure back to a list sorted from largest to smallest 
@@ -1677,12 +1640,18 @@ class BM25(BagOfWords):#
 			# Pop the bottom item from the max heap.
 			result = heapq.heappop(corpus_bm25)
 
+			# Reverse the BM25 score back to its original value.
+			result[0] *= -1
+
 			# Extract the document path and SHA1 and use them to load 
 			# the article text.
 			document_sha1 = result[1]
 			document, sha1 = os.path.basename(document_sha1).split(".xml")
 			document = os.path.join(self.documents_folder, document + ".xml")
-			text = load_article_text(document, [sha1])[0]
+			# text = load_article_text(document, [sha1])[0]
+			texts = file_text_map[document]
+			text_idx = file_sha_map[document].index(sha1)
+			text = texts[text_idx]
 			
 			# Append the results.
 			full_result = result + [text, [0, len(text)]]
@@ -1694,7 +1663,7 @@ class BM25(BagOfWords):#
 		return sorted_rankings
 
 
-	def compute_bm25(self, words: List[str], documents: List[str], max_results: int = -1):
+	def compute_bm25(self, words: List[str], documents: List[str], files_to_docs: Dict[str, List[str]], max_results: int = -1):
 		'''
 		Iterate through all the documents in the corpus and compute the
 			BM25 for each document in the corpus. Sort the results
@@ -1715,103 +1684,187 @@ class BM25(BagOfWords):#
 		# word in vector).
 		words = sorted(words)
 
-		# Iterate through all files to get IDF of each query word. 
-		# Compute only once per search.
-		word_idf = self.compute_idf(words)
-
 		# Compute corpus BM25.
 		corpus_bm25_heap = []
 
-		# Given the documents, get a filtered list of documents to use 
-		# from doc_to_word_files.
-		file_to_article = self.get_document_paths_from_documents(
-			documents
-		)
-		filtered_files = [
-			file 
-			for file in self.doc_to_word_files
-			if os.path.basename(file).replace(self.extension, ".xml") in list(file_to_article.keys())
-		]
+		# Flag to determine if BM25 values have to be recomputed (in 
+		# case class values for k1 and b were initialized to values
+		# that are different from the ones used during the 
+		# precompute_sparse_vectors script.)
+		recompute_bm25 = False
 
-		# NOTE:
-		# Heapq in use is a max-heap. In this case, we don't want to 
-		# multiply the BM25 score by -1 because a larger score means a
-		# document is "more relevant" to the query (so we want to drop
-		# the lower scores if we have a max_results limit). BM25 also 
-		# doesn't require using cosine similarity since it aggregates
-		# the term values into a sum for the document score.
-		print("Running BM25 search...")
+		# Iterate over each document.
+		for file in tqdm(documents):
+			file = file.replace(".msgpack", ".parquet")
+			df_doc2words = pd.read_parquet(file)
+			target_docs = files_to_docs[file]
 
-		# Compute BM25 for every file.
-		# for file in tqdm(self.doc_to_word_files):
-		for file in tqdm(filtered_files):
-			# Load the doc to word frequency mappings from file.
-			doc_to_words = load_data_file(file, self.use_json)
+			# Convert doc and word entries to strings.
+			df_doc2words["doc"] = df_doc2words["doc"].astype(str)
+			df_doc2words["word"] = df_doc2words["word"].astype(str)
 
-			document_intersect = set(documents).intersection(
-				list(doc_to_words.keys())
-			)
+			# Filter: Only query words and only target docs.
+			df_doc2words = df_doc2words[
+				df_doc2words["word"].isin(words) & df_doc2words["doc"].isin(target_docs)
+			]
 
-			# Iterate through each document.
-			# for doc in doc_to_words:
-			# for doc in documents:
-			for doc in document_intersect:
-				# Initialize the BM25 score for the document.
-				bm25_score = 0.0
+			# If no matches in this file, skip.
+			if df_doc2words.empty:
+				continue
 
-				# Extract the document word frequencies.
-				word_freq_map = doc_to_words[doc]
+			# Check to see if the cached BM25 value is still valid or
+			# if it needs to be recomputed. Using sampling of multiple
+			# rows to ensure we minimize coincidences.
+			sample_indices = random.sample(
+				range(len(df_doc2words)), 
+                min(5, len(df_doc2words))
+			)  # up to 5 rows
+			for idx in sample_indices:
+				sample_row = df_doc2words.iloc[idx]
+				computed_val = self.compute_bm25_(
+					sample_row["tf"],
+					sample_row["idf"],
+					sample_row["doc_len"]
+				)
+				value_is_close = math.isclose(
+					sample_row["bm25"], computed_val,
+					rel_tol=1e-6, abs_tol=1e-6
+				)
+				if not value_is_close:
+					recompute_bm25 = True
+					break
 
-				# Compute the document length.
-				doc_len = sum(
-					[value for value in word_freq_map.values()]
+			# Recompute the BM25 if necessary.
+			if recompute_bm25:
+				df_doc2words["bm25"] = df_doc2words.apply(
+					lambda row: self.compute_bm25_(
+						tf=row["tf"],
+						idf=row["idf"],
+						doc_len=row["doc_len"],
+					),
+					axis=1
 				)
 
-				# Compute the document's term frequency for each word.
-				doc_word_tf = self.compute_tf(word_freq_map, words)
+			# BM25: Sum BM25 scores over all matching words in a 
+			# document.
+			results = (
+				df_doc2words
+				.groupby("doc", as_index=False)["bm25"]
+				.sum()
+				.rename(columns={"bm25": "bm25_score"})
+			)
 
-				# Iterate over the different words and compute the BM25
-				# score for each. Aggregate that score by adding it to 
-				# the total BM25 score value.
-				for word_idx in range(len(words)):
-					tf = doc_word_tf[word_idx]
-					numerator = word_idf[word_idx] * tf * (self.k1 + 1)
-					denominator = tf + self.k1 *\
-						(
-							1 - self.b + self.b *\
-							(doc_len / self.avg_corpus_len)
-						)
-					bm25_score += numerator / denominator
+			# Get top-N docs for this batch.
+			top_n = results.nlargest(max_results, "bm25_score")
+			top_n_list = [(-row["bm25_score"], row["doc"]) for _, row in top_n.iterrows()]
 
-				# NOTE:
-				# We ignore similarity relevance threshold here because
-				# the range of values for BM25 scores are outside of
-				# the range of values we've set for srt [0.0, 1.0].
-				# Makes it a headache to deal with an unbounded range
-				# so we'll make do without this optimization.
-
-				# Insert the document name (includes file path & 
-				# article SHA1), BM25 score to the heapq. The heapq 
-				# sorts by the first value in the tuple so that is why
-				# the cosine similarity score is the first item in the 
-				# tuple.
+			# Push to heap.
+			for doc_bm25_score, doc in top_n_list:
 				if max_results != -1 and len(corpus_bm25_heap) >= max_results:
-					# Pushpop the smallest (BM25) value tuple from the 
-					# heap to make way for the next tuple.
-					heapq.heappushpop(
-						corpus_bm25_heap,
-						# tuple([bm25_score, doc])
-						[bm25_score, doc]
-					)
+					heapq.heappushpop(corpus_bm25_heap, [doc_bm25_score, doc])
 				else:
-					heapq.heappush(
-						corpus_bm25_heap,
-						# tuple([bm25_score, doc])
-						[bm25_score, doc]
-					)
+					heapq.heappush(corpus_bm25_heap, [doc_bm25_score, doc])
 
 		# Return the corpus BM25 rankings.
 		return corpus_bm25_heap
+
+		# # Given the documents, get a filtered list of documents to use 
+		# # from doc_to_word_files.
+		# file_to_article = self.get_document_paths_from_documents(
+		# 	documents
+		# )
+		# filtered_files = [
+		# 	file 
+		# 	for file in self.doc_to_word_files
+		# 	if os.path.basename(file).replace(self.extension, ".xml") in list(file_to_article.keys())
+		# ]
+
+		# # NOTE:
+		# # Heapq in use is a max-heap. In this case, we don't want to 
+		# # multiply the BM25 score by -1 because a larger score means a
+		# # document is "more relevant" to the query (so we want to drop
+		# # the lower scores if we have a max_results limit). BM25 also 
+		# # doesn't require using cosine similarity since it aggregates
+		# # the term values into a sum for the document score.
+		# print("Running BM25 search...")
+
+		# # Compute BM25 for every file.
+		# # for file in tqdm(self.doc_to_word_files):
+		# for file in tqdm(filtered_files):
+		# 	# Load the doc to word frequency mappings from file.
+		# 	doc_to_words = load_data_file(file, self.use_json)
+
+		# 	document_intersect = set(documents).intersection(
+		# 		list(doc_to_words.keys())
+		# 	)
+
+		# 	# Iterate through each document.
+		# 	# for doc in doc_to_words:
+		# 	# for doc in documents:
+		# 	for doc in document_intersect:
+		# 		# Initialize the BM25 score for the document.
+		# 		bm25_score = 0.0
+
+		# 		# Extract the document word frequencies.
+		# 		word_freq_map = doc_to_words[doc]
+
+		# 		# Compute the document length.
+		# 		doc_len = sum(
+		# 			[value for value in word_freq_map.values()]
+		# 		)
+
+		# 		# Compute the document's term frequency for each word.
+		# 		doc_word_tf = self.compute_tf(word_freq_map, words)
+
+		# 		# Iterate over the different words and compute the BM25
+		# 		# score for each. Aggregate that score by adding it to 
+		# 		# the total BM25 score value.
+		# 		for word_idx in range(len(words)):
+		# 			tf = doc_word_tf[word_idx]
+		# 			numerator = word_idf[word_idx] * tf * (self.k1 + 1)
+		# 			denominator = tf + self.k1 *\
+		# 				(
+		# 					1 - self.b + self.b *\
+		# 					(doc_len / self.avg_corpus_len)
+		# 				)
+		# 			bm25_score += numerator / denominator
+
+		# 		# NOTE:
+		# 		# We ignore similarity relevance threshold here because
+		# 		# the range of values for BM25 scores are outside of
+		# 		# the range of values we've set for srt [0.0, 1.0].
+		# 		# Makes it a headache to deal with an unbounded range
+		# 		# so we'll make do without this optimization.
+
+		# 		# Insert the document name (includes file path & 
+		# 		# article SHA1), BM25 score to the heapq. The heapq 
+		# 		# sorts by the first value in the tuple so that is why
+		# 		# the cosine similarity score is the first item in the 
+		# 		# tuple.
+		# 		if max_results != -1 and len(corpus_bm25_heap) >= max_results:
+		# 			# Pushpop the smallest (BM25) value tuple from the 
+		# 			# heap to make way for the next tuple.
+		# 			heapq.heappushpop(
+		# 				corpus_bm25_heap,
+		# 				# tuple([bm25_score, doc])
+		# 				[bm25_score, doc]
+		# 			)
+		# 		else:
+		# 			heapq.heappush(
+		# 				corpus_bm25_heap,
+		# 				# tuple([bm25_score, doc])
+		# 				[bm25_score, doc]
+		# 			)
+
+		# # Return the corpus BM25 rankings.
+		# return corpus_bm25_heap
+	
+
+	def compute_bm25_(self, tf: float, idf: float, doc_len: int):
+		return idf * (
+			(tf * (self.k1 + 1)) /\
+				(tf + self.k1 * (1 - self.b + self.b * (doc_len / self.avg_corpus_len)))
+		)
 
 
 class VectorSearch:
