@@ -24,12 +24,10 @@ from typing import List, Dict, Tuple, Union
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
-# import faiss
 import lancedb
 import msgpack
 import numpy as np
 import pandas as pd
-# import polars as pl
 import pyarrow as pa
 import torch
 from tqdm import tqdm
@@ -551,7 +549,7 @@ class BagOfWords:
 		# Iterate through each file in the documents to words map 
 		# files.
 		print("Getting the number of documents in the corpus...")
-		for file in tqdm(self.inverted_index_files):
+		for file in tqdm(self.sparse_vector_files):
 			# Load the data from the file and increment the counter by
 			# the number of documents in each file.
 			df = pd.read_parquet(file)
@@ -1235,16 +1233,10 @@ class BM25(BagOfWords):
 		# Iterate through each file in the documents to words map 
 		# files.
 		print("Computing average document length of corpus...")
-		for file in tqdm(self.doc_to_word_files):
-			# Load the data from the file.
-			doc_to_words = load_data_file(file, self.use_json)
-
-			# For each document in the data, compute the length of the
-			# document by adding up all the word frequency values.
-			for doc in list(doc_to_words.keys()):
-				doc_size_sum += sum(
-					[value for value in doc_to_words[doc].values()]
-				)
+		for file in tqdm(self.sparse_vector_files):
+			df = pd.read_parquet(file)
+			doc_lengths = df.groupby("doc")["doc_len"].first().tolist()
+			doc_size_sum += sum(doc_lengths)
 
 		# Return the average document size.
 		return doc_size_sum / self.corpus_size

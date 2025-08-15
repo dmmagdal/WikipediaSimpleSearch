@@ -10,11 +10,15 @@ import argparse
 import os
 import json
 import random
+import shutil
 import time
 from typing import Any, Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
+import requests
 import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
 from search import ReRankSearch, TF_IDF, BM25, VectorSearch
 from search import print_results
@@ -24,6 +28,110 @@ from search import load_article_text
 
 seed = 1234
 random.seed(seed)
+np.random.seed(seed)
+
+
+def generate_question(passage: str, model_name: str, device: str) -> str:
+	'''
+	Use a small LLM to generate a question that can be directly 
+		answered by the input passage.
+	@param passage (str), the input passage around which the question 
+		will be generated.
+	@param model_name (str), which LLM to run.
+	@param device (str), which hardware accelerator to run the LLM on.
+	@return: returns the generated question string.
+	'''
+	# Set up small LLM model (download if needed). Models are 
+	# chat/instruct models to allow for ChatGPT-like prompting instead
+	# of text completion.
+	model_path = model_name.replace("/", "_")
+	cache_path = model_path + "_tmp"
+
+	# Check for path and that path is a directory. Make it if either is
+	# not true.
+	if not os.path.exists(model_path) or not os.path.isdir(model_path):
+		os.makedirs(model_path, exist_ok=True)
+
+	# Check for path the be populated with files (weak check). Download
+	# the tokenizer and model and clean up files once done.
+	if len(os.listdir(model_path)) == 0:
+		print(f"Model {model_name} needs to be downloaded.")
+
+		# Check for internet connection (also checks to see that
+		# huggingface is online as well). Exit if fails.
+		response = requests.get("https://huggingface.co/")
+		if response.status_code != 200:
+			print(f"Request to huggingface.co returned unexpected status code: {response.status_code}")
+			print(f"Unable to download {model_name} model.")
+			exit(1)
+
+		# Create cache path folders.
+		os.makedirs(cache_path, exist_ok=True)
+		os.makedirs(model_path, exist_ok=True)
+
+		# Load tokenizer and model.
+		model_id = model_name
+		tokenizer = AutoTokenizer.from_pretrained(
+			model_id, cache_dir=cache_path, device_map=device
+		)
+		model = AutoModelForCausalLM.from_pretrained(
+			model_id, cache_dir=cache_path, device_map=device
+		)
+
+		# Save the tokenizer and model to the save path.
+		tokenizer.save_pretrained(model_path)
+		model.save_pretrained(model_path)
+
+		# Delete the cache.
+		shutil.rmtree(cache_path)
+	
+	# Load the tokenizer and model.
+	tokenizer = AutoTokenizer.from_pretrained(
+		model_path, device_map=device
+	)
+	model = AutoModelForCausalLM.from_pretrained(
+		model_path, device_map=device
+	)
+
+	# Initialize model pipeline.
+	pipe = pipeline(
+		"text-generation",
+		model=model.to(device),
+		tokenizer=tokenizer,
+	)
+
+	# Prompt.
+	prompt_template = [
+		{
+			"role": "system",
+			"content": "You are a friendly and helpful chatbot who always responds to any query or question asked."
+		},
+		{
+			"role": "user",
+			"content": f"Given the following text passage, create a question that can be answered by information directly found in the text:\n\n{passage}"
+		},
+	]
+	prompt_str = pipe.tokenizer.apply_chat_template(
+		prompt_template, 
+		tokenize=False,
+		add_generation_prompt=True,
+	)
+
+	# Pass prompt to model.
+	output = pipe(
+		prompt_str,
+		num_return_sequences=1,
+		do_sample=True,
+		temperature=1.25,
+		# top_k=8,
+		top_k=16,
+		top_p=0.90,
+		max_new_tokens=pipe.tokenizer.model_max_length
+	)
+
+	# Return output.
+	print(json.dumps(output))
+	return output[0]["generated_text"].replace(prompt_str, "")
 
 
 def evaluate_search_results(results: List[Tuple[float, str, str, List[int]]], selected_doc: str) -> None:
@@ -67,7 +175,7 @@ def get_random_paragraph_from_article(article_text: str) -> str:
 	# Split article text by paragraph and remove all empty string 
 	# entries.
 	split_text = [
-		text for text in article_text.split("\n") if text.strip()
+		text.strip() for text in article_text.split("\n") if text.strip()
 	]
 
 	# Randomly sample a paragraph from the split text. Weigh the 
@@ -116,6 +224,42 @@ def get_article_entries(articles: List[str]) -> List[Tuple[str, str, str, str]]:
 	return results
 
 
+def get_article_lengths(config: Dict[str, Any], articles: List[str]) -> List[int]:
+	'''
+	Retrieve the length of the respective articles provided.
+	@param: config (Dict[str, Any]), the configuration data from the 
+		config.json file.
+	@param: articles (List[str]), the list of articles being targeted.
+	@return: returns a list of int values which are the lengths of the 
+		respective input articles.
+	'''
+	# Pull all documents accounted for from the sparse vector metadata.
+	sparse_vector_path = config["preprocessing"]["sparse_vector_path"]
+	sparse_vector_files = [
+		os.path.join(sparse_vector_path, file)
+		for file in os.listdir(sparse_vector_path)
+		if file.endswith(".parquet")
+	]
+
+	# Throw an error if no such files were found.
+	if len(sparse_vector_files) == 0:
+		print(f"No supported files detected in {sparse_vector_path}")
+		exit(1)
+
+	# Iterate through the files and build a mapping of the documents to
+	# their lengths.
+	doc_len_map = dict()
+	for file in sparse_vector_files:
+		if file.endswith(".parquet"):
+			data = pd.read_parquet(file)
+			doc_len_map.update(zip(data["doc"], data["doc_len"]))
+
+	# Iterate over the article list and use the map to get the lengths
+	# for each respective document. Return the resulting list.
+	article_lengths = [doc_len_map.get(doc, 0) for doc in articles]
+	return article_lengths
+
+
 def get_all_articles(config: Dict[str, Any]) -> List[str]:
 	'''
 	Get all of the articles (file + SHA1) from the wikipedia dataset 
@@ -154,10 +298,10 @@ def get_all_articles(config: Dict[str, Any]) -> List[str]:
 		if file.endswith(".parquet"):
 			data = pd.read_parquet(file)
 			articles.extend(data["doc"].unique().tolist())
-		if file.endswith(".msgpack"):
+		elif file.endswith(".msgpack"):
 			data = load_data_from_msgpack(file)
 			articles.extend(list(data.keys()))
-		if file.endswith(".json"):
+		elif file.endswith(".json"):
 			data = load_data_from_json(file)
 			articles.extend(list(data.keys()))
 
@@ -237,8 +381,8 @@ def test(print_search: bool = False) -> None:
 	device = "cpu"
 	if torch.cuda.is_available():
 		device = "cuda"
-	elif torch.backends.mps.is_available():
-		device = "mps"
+	# elif torch.backends.mps.is_available():
+	# 	device = "mps"
 
 	###################################################################
 	# INITIALIZE SEARCH ENGINES
@@ -258,23 +402,23 @@ def test(print_search: bool = False) -> None:
 	search_2_init_elapsed = search_2_init_end - search_2_init_start
 	print(f"Time to initialize BM25 search: {search_2_init_elapsed:.6f} seconds")
 	
-	# search_3_init_start = time.perf_counter()
-	# vector_search = VectorSearch()
-	# search_3_init_end = time.perf_counter()
-	# search_3_init_elapsed = search_3_init_end - search_3_init_start
-	# print(f"Time to initialize Vector search: {search_3_init_elapsed:.6f} seconds")
+	search_3_init_start = time.perf_counter()
+	vector_search = VectorSearch(model, index_dir, device)
+	search_3_init_end = time.perf_counter()
+	search_3_init_elapsed = search_3_init_end - search_3_init_start
+	print(f"Time to initialize Vector search: {search_3_init_elapsed:.6f} seconds")
 
-	# search_4_init_start = time.perf_counter()
-	# rerank = ReRankSearch(bow_dir, index_dir, model, device=device)
-	# search_4_init_end = time.perf_counter()
-	# search_4_init_elapsed = search_4_init_end - search_4_init_start
-	# print(f"Time to initialize Rerank search: {search_4_init_elapsed:.6f} seconds")
+	search_4_init_start = time.perf_counter()
+	rerank = ReRankSearch(bow_dir, index_dir, model, device=device)
+	search_4_init_end = time.perf_counter()
+	search_4_init_elapsed = search_4_init_end - search_4_init_start
+	print(f"Time to initialize Rerank search: {search_4_init_elapsed:.6f} seconds")
 
 	search_engines = [
 		("tf-idf", tf_idf), 
 		("bm25", bm25), 
-		# ("vector", vector_search),
-		# ("rerank", rerank)
+		("vector", vector_search),
+		("rerank", rerank)
 	]
 
 	###################################################################
@@ -285,7 +429,14 @@ def test(print_search: bool = False) -> None:
 
 	print("Indexing all articles to sample from for testing:")
 	articles = get_all_articles(config)
-	selected_docs = random.sample(articles, 5)
+	article_lengths = get_article_lengths(config, articles)
+	probabilities = np.array(article_lengths) / np.sum(article_lengths)
+	selected_docs = np.random.choice(
+		articles, 
+		size=5,
+		replace=False,
+		p=probabilities
+	)
 	print("Sampled 5 articles.")
 
 	# TODO: Fix this bottleneck. Takes a few minutes. Consider rust
@@ -303,6 +454,16 @@ def test(print_search: bool = False) -> None:
 		for _, text, _, _ in article_entries
 	]
 	print("Isolated query passages.")
+	print()
+
+	# Print out the isolated query passages.
+	print("QUERY PASSAGES:")
+
+	for idx, query_passage in enumerate(query_passages):
+		print(article_entries[idx][0])
+		print(f"Passage:\n{query_passage}")
+		print()
+
 	print("=" * 72)
 	print("Testing Sparse Vector search engines:")
 
@@ -312,9 +473,14 @@ def test(print_search: bool = False) -> None:
 	# BM25: ~390s (or 6.5 min)
 	# Current bottleneck is the text loading. 
 
-	# Iterate through each search engine.
-	for name, engine in [search_engines[1]]:
-	# for name, engine in search_engines[:2]:
+	# Iterate through each search engine (sparse vector engines only/
+	# TF-IDF & BM25).
+	sparse_engines = [
+		(name, engine) for name, engine in search_engines
+		if name in ["tf-idf", "bm25"]
+	]
+	sparse_engines = [] # TODO: Remove when doing full testing.
+	for name, engine in sparse_engines:
 		# Search engine banner text.
 		print(f"Searching with {name}")
 		search_times = []
@@ -348,8 +514,6 @@ def test(print_search: bool = False) -> None:
 		avg_search_time = sum(search_times) / len(search_times)
 		print(f"Average search time: {avg_search_time:.6f} seconds")
 		print("=" * 72)
-		exit()
-	exit()
 
 	###################################################################
 	# GENERAL QUERY
@@ -357,13 +521,89 @@ def test(print_search: bool = False) -> None:
 	# Given passages that have some relative connection to random 
 	# articles, determine if the passage each search engine retrieves 
 	# is correct.
-	query_text = [
+	print("Now testing generic queries")
 
+	model_name = config["test"]["model"]
+	valid_models = config["test"]["models"]
+	assert model_name in valid_models, \
+		f"Expected model in config to be one of {valid_models}. Recieved {model_name}"
+
+	print("Generating abstract questions from the same passages.")
+	start = time.perf_counter()
+	abstract_query_text = [
+		generate_question(query, model_name, device) 
+		for query in query_passages
 	]
+	end = time.perf_counter()
+	elapsed = end - start
+	print(f"Questions generated in {elapsed:.6f} seconds")
+	print()
+
+	# Print out the isolated query passages.
+	print("ABSTRACT QUERY PASSAGES:")
+
+	for idx, query_passage in enumerate(abstract_query_text):
+		print(article_entries[idx][0])
+		print(f"Abstract Question:\n{query_passage}")
+		print()
+		print(f"Passage:\n{query_passages[idx]}")
+		print()
+
+	print("=" * 72)
+	print("Testing all Vector search engines:")
+
+	# NOTE:
+	# Mean search times for each search engine.
+	# TF-IDF: ~s (or  min)
+	# BM25: ~s (or  min)
+	# ReRank: ~s (or  min)
+	# Current bottleneck is the text loading. 
 	
+	# Iterate through each search engine.
 	for name, engine in search_engines:
-		pass
-	pass
+		# Skip vector search engine. Requires too many resources to
+		# generate embeddings.
+		if "vector"in name:
+			continue
+
+		# Search engine banner text.
+		print(f"Searching with {name}")
+		search_times = []
+
+		# Iterate through each passage and run the search with the 
+		# search engine.
+		for idx, query in enumerate(abstract_query_text):
+			# Run the search and track the time it takes to run the 
+			# search.
+			query_search_start = time.perf_counter()
+			results = engine.search(query)
+			query_search_end = time.perf_counter()
+			query_search_elapsed = query_search_end - query_search_start
+
+			# Print out the search time.
+			print(f"Search returned in {query_search_elapsed:.6f} seconds")
+			print()
+
+			# Print out the search results if specified.
+			if print_search:
+				print_results(results, search_type=name)
+
+			# Append the search time to a list.
+			search_times.append(query_search_elapsed)
+
+			# Evaluate the search results.
+			evaluate_search_results(results, selected_docs[idx])
+			print()
+
+		# Compute and print the average search time.
+		avg_search_time = sum(search_times) / len(search_times)
+		print(f"Average search time: {avg_search_time:.6f} seconds")
+		print("=" * 72)
+		exit()
+
+	shutil.rmtree(index_dir)
+
+	exit(0)
 
 
 def search_loop() -> None:

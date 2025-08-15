@@ -14,12 +14,15 @@
 /bert*
 /hkunlp*
 /sentence-transformers*
+/TinyLlama*
+/meta-llama*
 
 # Database(s).
 /data
 /vector_data
 /bag_of_words
 /metadata
+/test-temp
 
 # Preprocess state files.
 preprocess_state_bow.txt
