@@ -124,22 +124,6 @@ def load_article_text(path: str, sha1_list: List[str]) -> List[str]:
 	# original file (they contain white space and newline characters)
 	# so a string match becomes a bit difficult.
 
-	# # Initiaize the return list of articles.
-	# articles = []
-
-	# # Iterate through the different SHA1 values from the SHA1 hash
-	# # list.
-	# for sha1_hash in sha1_list:
-	# 	# Isolate the target article with the given SHA1 hash. Append
-	# 	# the processed text if it was found, otherwise append the
-	# 	# error message string.
-	# 	page = soup.find("page", attrs={"sha1": sha1_hash})
-	# 	# page = soup.find("page", sha1=sha1_hash)
-	# 	if page is not None:
-	# 		articles.append(process_page(page))
-	# 	else:
-	# 		articles.append(f"ERROR: COULD NOT LOCATE ARTICLE {sha1_hash} in {path}")
-
 	# Return the list of article texts.
 	return articles
 
@@ -612,7 +596,7 @@ class BagOfWords:
 			return self.get_documents_from_trie(filtered_words)
 		elif index == "category_word2vec":
 			pass
-		elif index == "ategory_weighted_tfidf":
+		elif index == "category_weighted_tfidf":
 			pass
 
 		return []
@@ -944,19 +928,6 @@ class BagOfWords:
 		# to the IDF.
 		idf_vector = [0.0] * len(words)
 		idf_dict = dict()
-
-		# Iterate through each file.
-		# for file in self.idf_files:
-		# 	# Load the word to IDF mappings from file.
-		# 	word_to_idf = load_data_file(file, use_json=self.use_json)
-
-		# 	# Iterate through each word and retrieve the IDF value for
-		# 	# that word if it is available.
-		# 	for word_idx in range(len(words)):
-		# 		word = words[word_idx]
-		# 		if word in word_to_idf:
-		# 			idf_vector[word_idx] = word_to_idf[word]
-		# 			idf_dict[word] = word_to_idf[word]
 
 		for file in self.sparse_vector_files:
 			if all(word in (idf_dict.keys()) for word in words):

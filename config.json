@@ -9,8 +9,8 @@
         "trie_cache": "./metadata/bag_of_words/trie_cache",
         "redirect_cache": "./metadata/bag_of_words/redirect_cache",
         "category_cache": "./metadata/bag_of_words/category_cache",
-        "corpus_size": 21118935,
-        "avg_doc_len": 568.731806220342,
+        "corpus_size": 483576,
+        "avg_doc_len": 344.3461441428028,
         "k1": 1.2,
         "b": 0.75
     },
@@ -23,7 +23,7 @@
         "trie_cache": "./metadata/bag_of_words/trie_cache",
         "redirect_cache": "./metadata/bag_of_words/redirect_cache",
         "category_cache": "./metadata/bag_of_words/category_cache",
-        "corpus_size": 21118935
+        "corpus_size": 483576
     },
     "vector-search_config": {
         "model": "bert",

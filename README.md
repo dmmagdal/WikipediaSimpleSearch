@@ -33,3 +33,6 @@ Description: Similar to the WikipediaEnSearch (which operates on the full Wikipe
          - Cut down/remove/ignore all "redirect" pages.
      - In a similar vein, I may have to rework the `preprocess_sparse_vectors.py` script to also be more memory efficient (speed is actually manageable). See above for RAM usage under a single worker for this script.
  - Running the vector database on the entire Simple Wikipedia corpus is still not scalable. Was barely 1/2 way through the first decompressed `.xml` file shard and it had generated over 312 GB of embeddings. A previous napkin calculation for the original full Wikipedia corpus showed that it would need terabytes of storage, so it stands to reason that a similar need would be required for this dataset. 
+ - Had to copy the key attributes in `corpus_stats.json` into `config.json`. May want to adjust `precompute_sparse_vectors.py` to automatically update the `config.json` directly.
+ - Toggle `corpus_size` affects TF-IDF directly when doing `compute_idf()`.
+     - Specifically, for words that are OOV, the smoothed version of the IDF is computed (smoothed version comes from BM25).
