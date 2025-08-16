@@ -36,3 +36,8 @@ Description: Similar to the WikipediaEnSearch (which operates on the full Wikipe
  - Had to copy the key attributes in `corpus_stats.json` into `config.json`. May want to adjust `precompute_sparse_vectors.py` to automatically update the `config.json` directly.
  - Toggle `corpus_size` affects TF-IDF directly when doing `compute_idf()`.
      - Specifically, for words that are OOV, the smoothed version of the IDF is computed (smoothed version comes from BM25).
+ - Really there is a problem with isolating "good" segments of articles from the corpus for testing.
+     - Current "bad" quality passages are primarily tables or references/citations.
+     - Have to deal with the weird format that WikiMedia uses to insert graph/table data. Hard to parse with normal/simple means.
+     - Tried doing tricky weighting schemes to favor longer articles and longer passages. Gets better results but still not good in terms of quality.
+     - Applied log to the lengths of the articles so as to balance the weights for sampling the articles. This has also improved results a bit too. 

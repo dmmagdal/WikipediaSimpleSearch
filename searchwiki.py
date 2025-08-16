@@ -9,7 +9,9 @@
 import argparse
 import os
 import json
+import math
 import random
+import re
 import shutil
 import time
 from typing import Any, Dict, List, Tuple
@@ -19,6 +21,7 @@ import pandas as pd
 import requests
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from transformers import set_seed
 
 from search import ReRankSearch, TF_IDF, BM25, VectorSearch
 from search import print_results
@@ -29,6 +32,7 @@ from search import load_article_text
 seed = 1234
 random.seed(seed)
 np.random.seed(seed)
+set_seed(seed)
 
 
 def generate_question(passage: str, model_name: str, device: str) -> str:
@@ -108,7 +112,7 @@ def generate_question(passage: str, model_name: str, device: str) -> str:
 		},
 		{
 			"role": "user",
-			"content": f"Given the following text passage, create a question that can be answered by information directly found in the text:\n\n{passage}"
+			"content": f"Given the following text passage, create a question that can be answered by information directly found in the text (DO NOT supply the answer):\n\n{passage}"
 		},
 	]
 	prompt_str = pipe.tokenizer.apply_chat_template(
@@ -130,7 +134,6 @@ def generate_question(passage: str, model_name: str, device: str) -> str:
 	)
 
 	# Return output.
-	print(json.dumps(output))
 	return output[0]["generated_text"].replace(prompt_str, "")
 
 
@@ -175,14 +178,37 @@ def get_random_paragraph_from_article(article_text: str) -> str:
 	# Split article text by paragraph and remove all empty string 
 	# entries.
 	split_text = [
-		text.strip() for text in article_text.split("\n") if text.strip()
+		text.strip() for text in article_text.split("\n\n") if text.strip()
 	]
+
+	# Crude wiki markup cleanup.
+	for idx, text in enumerate(split_text):
+		text = re.sub(r"\{\{.*?\}\}", "", text)  # remove templates
+		# text = re.sub(r"\[\[.*?:.*?\]\]", "", text)  # categories/files
+		# text = re.sub(r"==.*?==", "", text)  # headers
+		text = re.sub(r"<.*?>", "", text)  # html tags
+		split_text[idx] = text
+
+	# Compute weights as lengths of each paragraph.
+	weights = []
+	for text in split_text:
+		weight = len(text)
+
+		# If a paragraph (split along individual newline characters) is
+		# too long (indicating some sort of table or other structure),
+		# nullify the weight for that paragraph.
+		if len(text.split("\n")) > 5:
+			weight = math.ceil(weight * 0.01)
+
+		# Append the weight to the list.
+		weights.append(weight)
 
 	# Randomly sample a paragraph from the split text. Weigh the 
 	# choices by the length of the paragraph.
 	return random.choices(
 		split_text, 
-		weights=[len(text) for text in split_text],
+		# weights=[len(text) for text in split_text],
+		weights=weights,
 		k=1
 	)[0]
 
@@ -430,6 +456,7 @@ def test(print_search: bool = False) -> None:
 	print("Indexing all articles to sample from for testing:")
 	articles = get_all_articles(config)
 	article_lengths = get_article_lengths(config, articles)
+	article_lengths = [math.log(length) for length in article_lengths]
 	probabilities = np.array(article_lengths) / np.sum(article_lengths)
 	selected_docs = np.random.choice(
 		articles, 
@@ -563,7 +590,7 @@ def test(print_search: bool = False) -> None:
 	for name, engine in search_engines:
 		# Skip vector search engine. Requires too many resources to
 		# generate embeddings.
-		if "vector"in name:
+		if "vector" in name:
 			continue
 
 		# Search engine banner text.
@@ -599,7 +626,6 @@ def test(print_search: bool = False) -> None:
 		avg_search_time = sum(search_times) / len(search_times)
 		print(f"Average search time: {avg_search_time:.6f} seconds")
 		print("=" * 72)
-		exit()
 
 	shutil.rmtree(index_dir)
 

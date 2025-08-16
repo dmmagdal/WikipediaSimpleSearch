@@ -1597,7 +1597,8 @@ class VectorSearch:
 		# Iterate through the document ids.
 		for doc_idx in tqdm(range(len(document_ids))):
 			document_id = document_ids[doc_idx]
-			document, sha1 = os.path.basename(document_id).split(".xml")
+			# document, sha1 = os.path.basename(document_id).split(".xml")
+			document, sha1 = document_id.split(".xml")	# Use this because we're not able to load_article_text if full path is not present.
 			document += ".xml"
 
 			# Load the article text. Loading from stage 1 search 
@@ -1647,12 +1648,37 @@ class VectorSearch:
 		results = table.search(query_embedding).limit(max_results)
 		results = results.to_list()
 
+		# Build a mapping of files to sha1 hashes to allow for more 
+		# efficient text loading.
+		file_sha_map = dict()
+		for result in results:
+			file = result["file"]
+			sha = result["sha1"]
+			if file in file_sha_map:
+				file_sha_map[file].append(sha)
+			else:
+				file_sha_map[file] = [sha]
+
+		# Initialize a file (file + sha) to text map.
+		file_text_map = dict()
+		for file, sha_list in file_sha_map.items():
+			# Load all articles for that file using the file to sha1
+			# map.
+			texts = load_article_text(file, sha_list)
+			
+			# Iterate through the text and assign them to their correct
+			# file (file + sha1). This should reduce the IO overhead
+			# for loading the text data in the results.
+			for idx, text in enumerate(texts):
+				file_text_map[file + sha_list[idx]] = text
+
 		# Format search results.
 		results = [
 			tuple([
 				result["_distance"], 
-				result["file"] + result["SHA1"], 
-				load_article_text(result["file"], [result["SHA1"]]),
+				result["file"] + result["sha1"], 
+				# load_article_text(result["file"], [result["sha1"]]),	# Too slow.
+				file_text_map[result["file"] + result["sha1"]],
 				[
 					result["text_idx"], 
 					result["text_idx"] + result["text_len"]
