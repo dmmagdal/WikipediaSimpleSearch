@@ -33,6 +33,7 @@ seed = 1234
 random.seed(seed)
 np.random.seed(seed)
 set_seed(seed)
+torch.use_deterministic_algorithms(True)
 
 
 def generate_question(passage: str, model_name: str, device: str) -> str:
