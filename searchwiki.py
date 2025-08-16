@@ -506,7 +506,6 @@ def test(print_search: bool = False) -> None:
 		(name, engine) for name, engine in search_engines
 		if name in ["tf-idf", "bm25"]
 	]
-	sparse_engines = [] # TODO: Remove when doing full testing.
 	for name, engine in sparse_engines:
 		# Search engine banner text.
 		print(f"Searching with {name}")
