@@ -332,7 +332,7 @@ def get_all_articles(config: Dict[str, Any]) -> List[str]:
 			articles.extend(list(data.keys()))
 
 	# Deduplication.
-	articles = list(set(articles))
+	articles = sorted(list(set(articles)))
 
 	# Identify all redirect articles and filter them from the current 
 	# list. This will have required the precompute_sparse_vectors 
